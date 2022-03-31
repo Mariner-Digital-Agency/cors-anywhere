@@ -5,6 +5,7 @@ var createServer = require('../').createServer;
 var request = require('supertest');
 var path = require('path');
 var http = require('http');
+var https = require('https');
 var fs = require('fs');
 var assert = require('assert');
 
@@ -23,7 +24,7 @@ request.Test.prototype.expectJSON = function(json, done) {
 request.Test.prototype.expectNoHeader = function(header, done) {
   this.expect(function(res) {
     if (header.toLowerCase() in res.headers) {
-      return 'Unexpected header in response: ' + header;
+      return new Error('Unexpected header in response: ' + header);
     }
   });
   return done ? this.end(done) : this;
@@ -118,6 +119,31 @@ describe('Basic functionality', function() {
       .expect('Access-Control-Allow-Origin', '*')
       .expect(200, helpText, done);
   });
+
+  it('GET /http://:1234', function(done) {
+    // 'http://:1234' is an invalid URL.
+    request(cors_anywhere)
+      .get('/http://:1234')
+      .expect('Access-Control-Allow-Origin', '*')
+      .expect(200, helpText, done);
+  });
+
+  it('GET /http:///', function(done) {
+    // 'http://:1234' is an invalid URL.
+    request(cors_anywhere)
+      .get('/http:///')
+      .expect('Access-Control-Allow-Origin', '*')
+      .expect(200, helpText, done);
+  });
+
+  it('GET /http:/notenoughslashes', function(done) {
+    // 'http:/notenoughslashes' is an invalid URL.
+    request(cors_anywhere)
+      .get('/http:/notenoughslashes')
+      .expect('Access-Control-Allow-Origin', '*')
+      .expect(400, 'The URL is invalid: two slashes are needed after the http(s):.', done);
+  });
+
 
   it('GET ///example.com', function(done) {
     // API base URL (with trailing slash) + '//example.com'
@@ -219,6 +245,19 @@ describe('Basic functionality', function() {
       .expect('x-final-url', 'http://example.com/redirectwithoutlocation')
       .expect('access-control-expose-headers', /x-final-url/)
       .expect(302, 'maybe found', done);
+  });
+
+  it('GET with 302 redirect to an invalid Location should not be followed', function(done) {
+    // There is nothing to follow, so let the browser decide what to do with it.
+    request(cors_anywhere)
+      .get('/example.com/redirectinvalidlocation')
+      .redirects(0)
+      .expect('Access-Control-Allow-Origin', '*')
+      .expect('x-request-url', 'http://example.com/redirectinvalidlocation')
+      .expect('x-final-url', 'http://example.com/redirectinvalidlocation')
+      .expect('access-control-expose-headers', /x-final-url/)
+      .expect('Location', 'http:///')
+      .expect(302, 'redirecting to junk...', done);
   });
 
   it('POST with 307 redirect should not be handled', function(done) {
@@ -385,10 +424,18 @@ describe('Proxy errors', function() {
   });
 
   it('Content-Length mismatch', function(done) {
+    var errorMessage = 'Error: Parse Error: Invalid character in Content-Length';
+    // <13.0.0: https://github.com/nodejs/node/commit/ba565a37349e81c9d2402b0c8ef05ab39dca8968
+    // <12.7.0: https://github.com/nodejs/node/pull/28817
+    var nodev = process.versions.node.split('.').map(function(v) { return parseInt(v); });
+    if (nodev[0] < 12 ||
+        nodev[0] === 12 && nodev[1] < 7) {
+      errorMessage = 'Error: Parse Error';
+    }
     request(cors_anywhere)
       .get('/' + bad_http_server_url)
       .expect('Access-Control-Allow-Origin', '*')
-      .expect(404, 'Not found because of proxy error: Error: Parse Error', done);
+      .expect(404, 'Not found because of proxy error: ' + errorMessage, done);
   });
 
   it('Invalid HTTP status code', function(done) {
@@ -508,6 +555,87 @@ describe('server on https', function() {
   });
 });
 
+describe('NODE_TLS_REJECT_UNAUTHORIZED', function() {
+  var NODE_TLS_REJECT_UNAUTHORIZED;
+  var bad_https_server;
+  var bad_https_server_port;
+
+  var certErrorMessage = 'Error: certificate has expired';
+  // <0.11.11: https://github.com/nodejs/node/commit/262a752c2943842df7babdf55a034beca68794cd
+  if (/^0\.(?!11\.1[1-4]|12\.)/.test(process.versions.node)) {
+    certErrorMessage = 'Error: CERT_HAS_EXPIRED';
+  }
+
+  before(function() {
+    cors_anywhere = createServer({});
+    cors_anywhere_port = cors_anywhere.listen(0).address().port;
+  });
+  after(function(done) {
+    stopServer(done);
+  });
+
+  before(function() {
+    bad_https_server = https.createServer({
+      // rejectUnauthorized: false,
+      key: fs.readFileSync(path.join(__dirname, 'key.pem')),
+      cert: fs.readFileSync(path.join(__dirname, 'cert.pem')),
+    }, function(req, res) {
+      res.end('Response from server with expired cert');
+    });
+    bad_https_server_port = bad_https_server.listen(0).address().port;
+
+    NODE_TLS_REJECT_UNAUTHORIZED = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+  });
+  after(function(done) {
+    if (NODE_TLS_REJECT_UNAUTHORIZED === undefined) {
+      delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+    } else {
+      process.env.NODE_TLS_REJECT_UNAUTHORIZED = NODE_TLS_REJECT_UNAUTHORIZED;
+    }
+    bad_https_server.close(function() {
+      done();
+    });
+  });
+
+  it('respects certificate errors by default', function(done) {
+    // Test is expected to run without NODE_TLS_REJECT_UNAUTHORIZED=0
+    request(cors_anywhere)
+      .get('/https://127.0.0.1:' + bad_https_server_port)
+      .set('test-include-xfwd', '')
+      .expect('Access-Control-Allow-Origin', '*')
+      .expect('Not found because of proxy error: ' + certErrorMessage, done);
+  });
+
+  it('ignore certificate errors via NODE_TLS_REJECT_UNAUTHORIZED=0', function(done) {
+    stopServer(function() {
+      process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+      cors_anywhere = createServer({});
+      cors_anywhere_port = cors_anywhere.listen(0).address().port;
+      request(cors_anywhere)
+        .get('/https://127.0.0.1:' + bad_https_server_port)
+        .set('test-include-xfwd', '')
+        .expect('Access-Control-Allow-Origin', '*')
+        .expect('Response from server with expired cert', done);
+    });
+  });
+
+  it('respects certificate errors when httpProxyOptions.secure=true', function(done) {
+    stopServer(function() {
+      cors_anywhere = createServer({
+        httpProxyOptions: {
+          secure: true,
+        },
+      });
+      cors_anywhere_port = cors_anywhere.listen(0).address().port;
+      request(cors_anywhere)
+        .get('/https://127.0.0.1:' + bad_https_server_port)
+        .set('test-include-xfwd', '')
+        .expect('Access-Control-Allow-Origin', '*')
+        .expect('Not found because of proxy error: ' + certErrorMessage, done);
+    });
+  });
+});
+
 describe('originBlacklist', function() {
   before(function() {
     cors_anywhere = createServer({
@@ -571,6 +699,53 @@ describe('originWhitelist', function() {
       .get('/example.com/')
       .expect('Access-Control-Allow-Origin', '*')
       .expect(403, done);
+  });
+});
+
+describe('handleInitialRequest', function() {
+  afterEach(stopServer);
+
+  it('GET / with handleInitialRequest', function(done) {
+    cors_anywhere = createServer({
+      handleInitialRequest: function(req, res, location) {
+        res.writeHead(419);
+        res.end('res:' + (location && location.href));
+        return true;
+      },
+    });
+    cors_anywhere_port = cors_anywhere.listen(0).address().port;
+    request(cors_anywhere)
+      .get('/')
+      .expect(419, 'res:null', done);
+  });
+
+  it('GET /dummy with handleInitialRequest', function(done) {
+    cors_anywhere = createServer({
+      handleInitialRequest: function(req, res, location) {
+        res.writeHead(419);
+        res.end('res:' + (location && location.href));
+        return true;
+      },
+    });
+    cors_anywhere_port = cors_anywhere.listen(0).address().port;
+    request(cors_anywhere)
+      .get('/dummy')
+      .expect(419, 'res:http://dummy/', done);
+  });
+
+  it('GET /example.com with handleInitialRequest', function(done) {
+    cors_anywhere = createServer({
+      handleInitialRequest: function(req, res, location) {
+        res.setHeader('X-Extra-Header', 'hello ' + location.href);
+      },
+    });
+    cors_anywhere_port = cors_anywhere.listen(0).address().port;
+    request(cors_anywhere)
+      .get('/example.com')
+      .set('Origin', 'null')
+      .expect('Access-Control-Allow-Origin', '*')
+      .expect('X-Extra-Header', 'hello http://example.com/')
+      .expect(200, 'Response from example.com', done);
   });
 });
 
@@ -888,20 +1063,36 @@ describe('Access-Control-Max-Age set', function() {
   });
   after(stopServer);
 
-  it('GET /', function(done) {
+  it('OPTIONS /', function(done) {
+    request(cors_anywhere)
+      .options('/')
+      .expect('Access-Control-Allow-Origin', '*')
+      .expect('Access-Control-Max-Age', '600')
+      .expect(200, '', done);
+  });
+
+  it('OPTIONS /example.com', function(done) {
+    request(cors_anywhere)
+      .options('/example.com')
+      .expect('Access-Control-Allow-Origin', '*')
+      .expect('Access-Control-Max-Age', '600')
+      .expect(200, '', done);
+  });
+
+  it('GET / no Access-Control-Max-Age on GET', function(done) {
     request(cors_anywhere)
       .get('/')
       .type('text/plain')
       .expect('Access-Control-Allow-Origin', '*')
-      .expect('Access-Control-Max-Age', '600')
+      .expectNoHeader('Access-Control-Max-Age')
       .expect(200, helpText, done);
   });
 
-  it('GET /example.com', function(done) {
+  it('GET /example.com no Access-Control-Max-Age on GET', function(done) {
     request(cors_anywhere)
       .get('/example.com')
       .expect('Access-Control-Allow-Origin', '*')
-      .expect('Access-Control-Max-Age', '600')
+      .expectNoHeader('Access-Control-Max-Age')
       .expect(200, 'Response from example.com', done);
   });
 });
@@ -912,6 +1103,22 @@ describe('Access-Control-Max-Age not set', function() {
     cors_anywhere_port = cors_anywhere.listen(0).address().port;
   });
   after(stopServer);
+
+  it('OPTIONS / corsMaxAge disabled', function(done) {
+    request(cors_anywhere)
+      .options('/')
+      .expect('Access-Control-Allow-Origin', '*')
+      .expectNoHeader('Access-Control-Max-Age')
+      .expect(200, '', done);
+  });
+
+  it('OPTIONS /example.com corsMaxAge disabled', function(done) {
+    request(cors_anywhere)
+      .options('/example.com')
+      .expect('Access-Control-Allow-Origin', '*')
+      .expectNoHeader('Access-Control-Max-Age')
+      .expect(200, '', done);
+  });
 
   it('GET /', function(done) {
     request(cors_anywhere)
