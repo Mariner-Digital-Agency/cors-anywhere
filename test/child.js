@@ -34,7 +34,9 @@ var server;
 if (process.argv.indexOf('use-http-instead-of-cors-anywhere') >= 0) {
   server = require('http').createServer(function(req, res) { res.end(); });
 } else {
-  server = require('../').createServer();
+  // The memory test proxies to a real loopback (127.0.0.1) test server, which
+  // the SSRF egress guard would otherwise block. Exempt the loopback test host.
+  server = require('../').createServer({ssrfAllowlist: ['127.0.0.1']});
 }
 
 server.listen(0, function() {

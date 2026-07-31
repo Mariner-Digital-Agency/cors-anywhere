@@ -1,4 +1,39 @@
 var nock = require('nock');
+var net = require('net');
+
+// --- SSRF egress guard: deterministic DNS resolver for tests --------------
+// The proxy's SSRF guard resolves DNS names to verify they are not internal.
+// nock does NOT intercept dns.lookup, so without this override the guard would
+// perform real network DNS (flaky/offline-unsafe, e.g. `robots.txt` -> ENOTFOUND
+// would fail closed and break existing tests). We inject a fake resolver that:
+//   - maps a designated hostname to a PRIVATE IP, to exercise DNS-rebinding
+//     blocking (see test/test-ssrf.js), and
+//   - resolves every other hostname to a fixed PUBLIC IP.
+// This only affects the module loaded in-process by the test suite; production
+// code (and the forked memory-test child, which never requires this file) keeps
+// Node's real resolver.
+var corsAnywhere = require('../');
+corsAnywhere.dnsLookup = function(hostname, options, callback) {
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+  var privateHosts = {
+    // Simulates a host whose DNS record points at an internal address.
+    'ssrf-rebind-private.test': '10.0.0.1',
+  };
+  var address = privateHosts[hostname] || '93.184.216.34'; // default: public
+  var result = {address: address, family: net.isIPv6(address) ? 6 : 4};
+  process.nextTick(function() {
+    if (options && options.all) {
+      callback(null, [result]);
+    } else {
+      callback(null, result.address, result.family);
+    }
+  });
+};
+// --------------------------------------------------------------------------
+
 if (parseInt(process.versions.node, 10) >= 8) {
   // See DEP0066 at https://nodejs.org/api/deprecations.html.
   // _headers and _headerNames have been removed from Node v8, which causes
@@ -34,8 +69,11 @@ function echoheaders(origin) {
         'accept-encoding',
         'user-agent',
         'connection',
-        // Remove this header since its value is platform-specific.
+        // Remove these headers since their values are platform-specific
+        // (host/port bound at runtime). http-proxy >=1.18 adds x-forwarded-host
+        // in addition to x-forwarded-for when xfwd is enabled.
         'x-forwarded-for',
+        'x-forwarded-host',
         'test-include-xfwd',
       ];
       if (!('test-include-xfwd' in headers)) {

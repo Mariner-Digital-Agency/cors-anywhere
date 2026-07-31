@@ -1,0 +1,6 @@
+# Normalize line endings: store as LF in the repo and check out as LF
+# on every platform, so the working tree never reintroduces CRLF churn.
+* text=auto eol=lf
+
+# Certificates are treated as binary so their bytes are never EOL-normalized.
+*.pem binary

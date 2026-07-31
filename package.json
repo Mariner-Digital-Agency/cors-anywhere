@@ -28,8 +28,8 @@
     "server.js"
   ],
   "dependencies": {
-    "http-proxy": "1.11.1",
-    "proxy-from-env": "0.0.1"
+    "http-proxy": "^1.18.1",
+    "proxy-from-env": "^1.1.0"
   },
   "devDependencies": {
     "coveralls": "^2.11.6",
@@ -41,11 +41,12 @@
     "supertest": "^2.0.1"
   },
   "scripts": {
+    "start": "node server.js",
     "lint": "eslint .",
     "test": "mocha ./test/test*.js --reporter spec",
     "test-coverage": "istanbul cover ./node_modules/.bin/_mocha -- test/test.js test/test-ratelimit.js --reporter spec"
   },
   "engines": {
-    "node": ">=0.10.0"
+    "node": ">=20"
   }
 }

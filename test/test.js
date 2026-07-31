@@ -310,7 +310,9 @@ describe('Basic functionality', function() {
 
 describe('Proxy errors', function() {
   before(function() {
-    cors_anywhere = createServer();
+    // These tests proxy to real loopback (127.0.0.1) test servers, which the
+    // SSRF egress guard would otherwise block. Exempt the loopback test host.
+    cors_anywhere = createServer({ssrfAllowlist: ['127.0.0.1']});
     cors_anywhere_port = cors_anywhere.listen(0).address().port;
   });
   after(stopServer);
@@ -438,6 +440,8 @@ describe('Proxy errors', function() {
         // a header validation error in superagent. So we use setHeaders to test
         // the attempt to proxy a request with invalid request headers.
         setHeaders: {headername: 'invalid\x01value'},
+        // Proxies to a real loopback test server; exempt it from the SSRF guard.
+        ssrfAllowlist: ['127.0.0.1'],
       });
       cors_anywhere_port = cors_anywhere.listen(0).address().port;
       request(cors_anywhere)
