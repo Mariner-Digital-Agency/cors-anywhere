@@ -182,6 +182,10 @@ export CORSANYWHERE_BLOCKED_IPS=196.39.139.145
 export CORSANYWHERE_RATELIMIT='30 5'
 ```
 
+The server **refuses to start** unless both `CORSANYWHERE_WHITELIST` and `CORSANYWHERE_ALLOWED_TARGETS` are
+set, so a lost variable produces a failed deploy instead of an open relay. `CORSANYWHERE_ALLOW_OPEN=1` is the
+explicit opt-out.
+
 Why: in October 2026 one client IP used the open proxy as a relay (about 3,000 requests a day to
 unrelated hosts and raw IPs, from 2026-10-10). Callers today: only the Site Structure Navigator
 extension (welcome email through the mdamailer cloud function). The Mariner websites call the
