@@ -8,12 +8,33 @@ var port = process.env.PORT || 8080;
 // immediate abuse (e.g. denial of service). If you want to block all origins except for some,
 // use originWhitelist instead.
 var originBlacklist = parseEnvList(process.env.CORSANYWHERE_BLACKLIST);
-var originWhitelist = parseEnvList(process.env.CORSANYWHERE_WHITELIST);
+var originWhitelist = parseEnvHostList(process.env.CORSANYWHERE_WHITELIST, false);
+// Hostnames the proxy may forward to (lowercase, exact). Empty = no restriction.
+var targetAllowlist = parseEnvHostList(process.env.CORSANYWHERE_ALLOWED_TARGETS, true);
+
+// Fail closed. This service was once left as a free open relay (the allowlist
+// variables were simply never set after a platform move), so it refuses to start
+// without BOTH an origin whitelist and a destination allowlist. Set
+// CORSANYWHERE_ALLOW_OPEN=1 only to deliberately run an open proxy.
+if (process.env.CORSANYWHERE_ALLOW_OPEN !== '1' && (!originWhitelist.length || !targetAllowlist.length)) {
+  console.error('Refusing to start: set CORSANYWHERE_WHITELIST and CORSANYWHERE_ALLOWED_TARGETS ' +
+      '(or CORSANYWHERE_ALLOW_OPEN=1 to run as an open proxy).');
+  process.exit(1);
+}
 function parseEnvList(env) {
   if (!env) {
     return [];
   }
   return env.split(',');
+}
+
+// Like parseEnvList, but tolerant of spaces and blank entries so a stray
+// ", " in the Railway variable cannot silently disable a rule.
+function parseEnvHostList(env, lowercase) {
+  return parseEnvList(env).map(function(entry) {
+    entry = entry.trim();
+    return lowercase ? entry.toLowerCase() : entry;
+  }).filter(Boolean);
 }
 
 // Set up rate-limiting to avoid abuse of the public CORS Anywhere server.
@@ -23,6 +44,7 @@ var cors_proxy = require('./lib/cors-anywhere');
 cors_proxy.createServer({
   originBlacklist: originBlacklist,
   originWhitelist: originWhitelist,
+  targetAllowlist: targetAllowlist,
   requireHeader: ['origin', 'x-requested-with'],
   checkRateLimit: checkRateLimit,
   removeHeaders: [

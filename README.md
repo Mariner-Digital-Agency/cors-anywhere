@@ -158,6 +158,35 @@ node server.js
 ```
 
 
+### Operator abuse controls (Mariner Digital Agency deployment)
+
+`cors.marinerdigitalagency.com` runs on Railway with these environment variables. They live in the Railway
+service, not in this repository, so record any change here.
+
+```bash
+# Only these browser/extension origins may use the proxy (exact match on the Origin header,
+# comma separated, no spaces). A request with no Origin is refused.
+export CORSANYWHERE_WHITELIST=chrome-extension://jcidaogiecfddcmhcnplfagahimdmied
+
+# Only these destination hostnames may be proxied to (exact, case-insensitive). Applied to the
+# first request and to every redirect hop. Empty = no restriction (open proxy).
+# Unlike an Origin check this cannot be dodged by spoofing a header: the proxy simply has
+# nowhere unapproved to send traffic.
+export CORSANYWHERE_ALLOWED_TARGETS=us-central1-mdamailer313.cloudfunctions.net
+
+# Per-origin rate limit: 30 requests per 5 minutes.
+export CORSANYWHERE_RATELIMIT='30 5'
+```
+
+The server **refuses to start** unless both `CORSANYWHERE_WHITELIST` and `CORSANYWHERE_ALLOWED_TARGETS` are
+set, so a lost variable produces a failed deploy instead of an open relay. `CORSANYWHERE_ALLOW_OPEN=1` is the
+explicit opt-out.
+
+Why: in October 2026 one client IP used the open proxy as a relay (about 3,000 requests a day to
+unrelated hosts and raw IPs, from 2026-10-10). Callers today: only the Site Structure Navigator
+extension (welcome email through the mdamailer cloud function). The Mariner websites call the
+mailer directly.
+
 ## License
 
 Copyright (C) 2013 - 2016 Rob Wu <rob@robwu.nl>
