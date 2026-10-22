@@ -42,6 +42,10 @@ To add a consumer: add its exact Origin to `CORSANYWHERE_WHITELIST` and its dest
 
 **Verified live** after the final deploy: no Origin, wrong Origin, right Origin to the abuser's targets, raw IPs, the cloud-metadata address, arbitrary sites, a look-alike host and an `allowed-host@evil` userinfo URL are all refused; the mailer host and the pre-flight for the Navigator's POST work; the full Navigator request (POST to `/welcomeMessage`) succeeds end to end.
 
+## Known leftover: stray `tmp-pg-inspect` service
+
+The `cors-proxy-mda` Railway project contains a service named `tmp-pg-inspect`: an empty `debian:12-slim` container (status "Completed", no volume, no domain) created accidentally on 2026-10-22 when a `railway add` was run from a shell linked to this project instead of the backend project. It does nothing and costs almost nothing, but it is not part of the proxy. Delete it in the Railway dashboard (click it, Settings, Delete Service). It is not the proxy: do not touch the service named `cors-proxy-mda`. Running `railway add` also re-links the local folder to the new service; relink with `railway service link cors-proxy-mda`.
+
 ## Tests
 
 `npm test`: 88 passing, 8 failing. The 8 failures are identical on `master` before this work (old `http-proxy` stream-teardown tests on Node 22: "Content-Encoding invalid body", "Content-Length mismatch", "Invalid HTTP status code", rate-limit/memory/rewrite examples). They are not caused by the abuse controls. `test/test-abuse-controls.js` adds 7 tests for the destination allowlist.
