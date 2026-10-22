@@ -174,10 +174,6 @@ export CORSANYWHERE_WHITELIST=chrome-extension://jcidaogiecfddcmhcnplfagahimdmie
 # nowhere unapproved to send traffic.
 export CORSANYWHERE_ALLOWED_TARGETS=us-central1-mdamailer313.cloudfunctions.net
 
-# Client IPs refused outright (comma separated). The address is the last X-Forwarded-For entry
-# (appended by Railway's edge); entries to its left are client-supplied and ignored.
-export CORSANYWHERE_BLOCKED_IPS=196.39.139.145
-
 # Per-origin rate limit: 30 requests per 5 minutes.
 export CORSANYWHERE_RATELIMIT='30 5'
 ```

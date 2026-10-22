@@ -1,12 +1,12 @@
 /* eslint-env mocha */
-// Tests for the operator abuse controls: the target allowlist and the blocked
-// client IP list.
+// Tests for the operator abuse control: the target allowlist.
 //
 // Background: the proxy was found being used as a free open relay (one client
 // IP, ~3k requests/day, to unrelated hosts and raw IPs). An Origin check alone
 // cannot stop that because any non-browser client can send any Origin. The
-// target allowlist removes the thing being abused (arbitrary destinations), and
-// the client IP list refuses a known abuser before anything else happens.
+// target allowlist removes the thing being abused (arbitrary destinations).
+// (A client-IP block was tried and removed: behind Railway's edge the proxy does
+// not receive the client address in X-Forwarded-For, so it never matched.)
 require('./setup');
 
 var nock = require('nock');
@@ -124,58 +124,6 @@ describe('Abuse controls', function() {
       request(cors_anywhere)
         .get('/http://unapproved.test/')
         .expect(200, 'Response from unapproved.test', done);
-    });
-  });
-
-  describe('blockedClientIps', function() {
-    var cors_anywhere;
-    before(function() {
-      cors_anywhere = createServer({blockedClientIps: ['203.0.113.9']});
-      cors_anywhere.listen(0);
-    });
-    after(function(done) {
-      cors_anywhere.close(done);
-    });
-
-    it('refuses the blocked client (edge-appended address)', function(done) {
-      request(cors_anywhere)
-        .get('/example.com/')
-        .set('X-Forwarded-For', '203.0.113.9')
-        .expect(403, 'This client is blocked by the operator of this proxy.', done);
-    });
-
-    it('uses the last X-Forwarded-For entry, so a blocked client cannot hide behind a spoofed one', function(done) {
-      request(cors_anywhere)
-        .get('/example.com/')
-        .set('X-Forwarded-For', '198.51.100.7, 203.0.113.9')
-        .expect(403, done);
-    });
-
-    it('does not block someone just because a blocked IP appears to the left of the real one', function(done) {
-      request(cors_anywhere)
-        .get('/example.com/')
-        .set('X-Forwarded-For', '203.0.113.9, 198.51.100.7')
-        .expect(200, 'Response from example.com', done);
-    });
-
-    it('also refuses the blocked client\'s pre-flight request', function(done) {
-      request(cors_anywhere)
-        .options('/example.com/')
-        .set('X-Forwarded-For', '203.0.113.9')
-        .expect(403, done);
-    });
-
-    it('does not affect other clients', function(done) {
-      request(cors_anywhere)
-        .get('/example.com/')
-        .set('X-Forwarded-For', '198.51.100.7')
-        .expect(200, 'Response from example.com', done);
-    });
-
-    it('falls back to the socket address when no forwarding header is present', function(done) {
-      request(cors_anywhere)
-        .get('/example.com/')
-        .expect(200, 'Response from example.com', done);
     });
   });
 });

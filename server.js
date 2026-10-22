@@ -11,8 +11,6 @@ var originBlacklist = parseEnvList(process.env.CORSANYWHERE_BLACKLIST);
 var originWhitelist = parseEnvHostList(process.env.CORSANYWHERE_WHITELIST, false);
 // Hostnames the proxy may forward to (lowercase, exact). Empty = no restriction.
 var targetAllowlist = parseEnvHostList(process.env.CORSANYWHERE_ALLOWED_TARGETS, true);
-// Client IPs refused outright.
-var blockedClientIps = parseEnvHostList(process.env.CORSANYWHERE_BLOCKED_IPS, false);
 
 // Fail closed. This service was once left as a free open relay (the allowlist
 // variables were simply never set after a platform move), so it refuses to start
@@ -47,7 +45,6 @@ cors_proxy.createServer({
   originBlacklist: originBlacklist,
   originWhitelist: originWhitelist,
   targetAllowlist: targetAllowlist,
-  blockedClientIps: blockedClientIps,
   requireHeader: ['origin', 'x-requested-with'],
   checkRateLimit: checkRateLimit,
   removeHeaders: [
